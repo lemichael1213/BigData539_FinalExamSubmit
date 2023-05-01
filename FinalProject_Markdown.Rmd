@@ -1,0 +1,566 @@
+---
+title: "Big Data Analysis Final Project"
+author: "Lauren Michael"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, echo=FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## How Has Bird Abundance Changed Over Time on Block Island, RI?
+
+This analysis was completed for the final project of the BIO539 - Big Data Analysis class at The University of Rhode Island. The work completed in this project serves as exploratory analysis that will be integrated into my masters thesis. For this project, I will be looking at the long-term changes in bird abundance of various bird species on Block Island, RI. using a 56 year-long continuous bird banding dataset.  
+
+This dataset, collected at the Block Island Banding Station (BIBS) on Block Island, RI., is publicly accessible via the United States Geological Survey Bird Banding Lab (USGS BBL). This data was collected from 1967 to 2023, though due to some database issues, not all years are present in this dataset. Most notably, 1967 and 2004 are both missing. The dataset issues will be remedied this summer and the analysis will be rerun with the complete dataset. Currently, the net hours dataset has only been entered up until 2016, which means that any analysis that requires effort calculations will only include years up until 2016. 
+
+To begin, we need to download the necessary packages: tidyverse and lubridate.
+```{r data, echo = FALSE, message = FALSE, warning = FALSE}
+#begin by bringing in necessary packages
+library(tidyverse)
+library(lubridate)
+```
+
+The first step of the process involves putting together all of the data I have, which come from different sources. Prior to 2005, the banding data was recording to paper datasheets, entered into a database in a program called Filemaker, and then printed from Filemaker and mailed to the Bird Banding Lab (BBL) to submit the data. Upon inspection of the data, it became apparent that the BBL had lost some of this data, which means that the Filemaker datafiles were more accurate. The curator of the database created an excel file where they compared the BBL records and the Filemaker records and matched them up, with the hope of fixing any issues. This is the datafile labeled "matchedBIBSdata." After 2005, the banding data was collected on paper datasheets and then entered straight into the BBL website. This is the data labeled "banddata." To end up with the most accurate datafile from 1967-2022, I then needed to combine the two datasets. This code is all commented out so that I can avoid uploading the larger dataset to github, but you can see the process below. In short, here was my process:
+
+1. Filter the BBL data (which included every bird ever banded on Block Island) down to what I wanted it to be. This means only the BIBS banding site (filtered using the lead bander's permit number). I then also filtered the BBL data so that it only included data after 2006. 
+
+2. Ensure that both datasets had the same columns. The matched dataset had many extra columns that were unnecessary, so those were removed. 
+
+3. Use the rbind function to add all of the rows together to make one complete dataset. 
+
+4. Filter this combined dataset to only include fall data (what I'm interested in). Fall in this case means any data collected in September, October, or November. This is the dataset we will be working with, titled "falldataBIBS."
+```{r raw analysis,  echo = FALSE, message = FALSE, warning = FALSE}
+# #import data
+# 
+# #data from the bird banding lab
+# banddata <- read_csv("All_Banding_Data_Spring_2023_BBL.csv")
+# #data on Kim's station from Steve Reinert
+# matchedBIBSdata <- read_csv("Match_Band_Number_and_Date_ 20sep19.csv")
+# 
+# 
+# #This is the non-matched data after 2005
+# BIBSafter2005 <- banddata %>% 
+#   filter(PERMIT_NUM == "09636") %>% 
+#   filter(BANDING_YEAR >= 2006) %>% 
+#   select(AGE_CODE, BAND_NUM, BAND_SIZE_CODE, BAND_STATUS_CODE, BAND_TYPE_CODE, BANDING_DATE, BANDING_DAY, BANDING_MONTH, BANDING_YEAR, BIRD_STATUS,HOW_AGED_CODE, HOW_SEXED_CODE, SEX_CODE, SPECIES_ID, SPECIES_NAME, BODY_MOLT, CAPTURE_TIME, FAT_SCORE, WING_CHORD, OTHER_BANDS)
+#   
+# 
+# #Matched data before 2005..too many columns so I made it match the after2005 data
+# BIBSbefore2005 <- matchedBIBSdata %>% 
+#   select(AGE_CODE, BAND_NUM, BAND_SIZE_CODE, BAND_STATUS_CODE, BAND_TYPE_CODE, BANDING_DATE, BANDING_DAY, BANDING_MONTH, BANDING_YEAR, BIRD_STATUS,HOW_AGED_CODE, HOW_SEXED_CODE, SEX_CODE, SPECIES_ID, SPECIES_NAME, BODY_MOLT, CAPTURE_TIME, FAT_SCORE, WING_CHORD, OTHER_BANDS)
+# 
+# 
+# 
+# #check that they have the same number of columns
+# ncol(BIBSafter2005)
+# ncol(BIBSbefore2005)
+# 
+# #combine them into one giant dataset with all years
+# allBIBSdataCOMBINED <- rbind(BIBSbefore2005, BIBSafter2005)
+# 
+# 
+# 
+# #it worked! You can check below to see that we now have 1968-2021
+# unique(allBIBSdataCOMBINED$BANDING_YEAR)
+
+#Get only fall data from combined dataset
+#I am including Sept-November
+# falldataBIBS <- allBIBSdataCOMBINED %>% 
+#   filter(BANDING_MONTH == 9 | BANDING_MONTH == 10 | BANDING_MONTH == 11)
+# 
+# #turn date column into a date
+# falldataBIBS$BANDING_DATE = mdy(falldataBIBS$BANDING_DATE)
+# 
+
+#write.csv(falldataBIBS, "Combined_Falldata_BIBS.csv")
+
+
+
+```
+
+Here is where I began the real analysis now that the data was all ready to work with. Begin by importing the falldataBIBS file as well as the BIBSnethours file. As mentioned, falldata BIBS contains all of the fall data from the BIBS from 1967-present. BIBSnethours is a document containing daily net hour information from 1967-2016. Net hours are calculated as the number of nets open each day and the number of hours they are open. For example, if 10 nets are open for 10 hours, this totals to 100 net hours for that day. We can use net hours to account for effort in our analysis. Net hours have not been entered beyond 2016, so all analysis involving net hours stops at 2016 for this reason.
+
+```{r Bring in data,  echo = FALSE, message = FALSE, warning = FALSE}
+###Bring in our data:
+#falldataBIBS is all bird banding captures (1968-2016) from September through November of each year at BIBS
+falldataBIBS <- read_csv("Combined_Falldata_BIBS.csv")
+
+
+#BIBS net hour data 1967-2016
+BIBSnethours <- read_csv("BIBS_net_hours_1967_2016.csv")
+
+```
+
+
+
+Next I needed to pair down the net hours data so that it matched the capture data and could be used to account for effort. To do this, I filtered net hours down to just include fall and made sure that the date was reading in as a date in R. I then summarized it down to net hours per year. 
+
+```{r net hours wrangling, message = FALSE,  echo = FALSE}
+
+##We need to do some wrangling to make sense of net hours
+#To begin, we have to filter it down to just fall (Sept-Nov)
+fallBIBSnethours <- BIBSnethours %>% 
+  filter(month == 9 | month == 10 | month == 11)
+
+#Make sure R is reading the date as a date
+fallBIBSnethours$captdate <- dmy(fallBIBSnethours$captdate)
+
+#Now we can summarize net hours down to the net hours per year (1968-2016) at BIBS
+YearlyNetHours <- fallBIBSnethours %>% 
+  group_by(year) %>% 
+  summarize(totalnethours = sum(nethours)) %>% 
+  rename("BANDING_YEAR" = "year")
+
+
+```
+
+
+
+
+## Figure 1. How have total captures changed over time?
+
+For my first figure, I wanted to look at how total numbers of captures have changed over time. First I needed to filter the fall dataset down to only data before 2016 (to match the net hours) and then summarized by year. I then merged the net hours dataset into the yearly capture dataset by the BANDING_YEAR column. To calculate effort, I then divided the number of yearly captures by net hours and multiplied by 100. This is what I graphed for this figure.
+
+```{r total captures per year,  echo = FALSE, message = FALSE}
+#Calculate fall captures per year
+
+BIBSYearlyCaptures <- falldataBIBS %>% 
+  filter(BANDING_YEAR <= 2016) %>% 
+  group_by(BANDING_YEAR) %>% 
+  summarize(Number_Captures = n())
+
+#merge them into one so we have net hours + captures!
+YearlyCaptures_NetHours = merge(x=BIBSYearlyCaptures,y=YearlyNetHours,by="BANDING_YEAR",all=TRUE)
+
+#now we can account for effort!
+#this gives us birds per 100 net hours
+YearlyCaptures_Effort <- YearlyCaptures_NetHours %>% 
+  mutate(birds_per_nethour = Number_Captures/totalnethours *100)
+  
+  
+
+```
+
+
+
+```{r how have captures changed over time, warning = FALSE, echo = FALSE}
+#How have captures changed over time?
+
+ggplot(data = YearlyCaptures_Effort, aes(x = BANDING_YEAR, y = birds_per_nethour))+
+  geom_point()+
+  geom_line()+
+  theme_classic()+
+  xlab("Year")+
+  ylab("Total Birds Per 100 Net Hours")
+
+```
+
+
+
+I expected a slow decline over time between 1968 to present, but was not expecting such a steep decrease in bird captures in the late 1970s. I did not run a linear model on this figure because the data was far from linear and will require a more complex model to determine what is causing these decreases over time. 
+
+
+## Figure 2. How has the number of species captured per year changed over time?
+
+For this figure, I simply grouped the fall data by banding year and summarized the number of distinct species per year. I accounted for effort by dividing the number of species per year by the total yearly net hours and multiplying by 100.  I then plotted it with year on the x axis and number of species per 100 net hours on the y axis. 
+```{r how have species changed over time, warning = FALSE, echo = FALSE, message = FALSE}
+#number of species per year 
+BIBS_species <- falldataBIBS %>% 
+  group_by(BANDING_YEAR) %>% 
+  summarize(nspecies = n_distinct(SPECIES_NAME))
+
+Bibs_species_NetHours = merge(x=BIBS_species,y=YearlyNetHours,by="BANDING_YEAR",all=TRUE)
+
+Bibs_species_Effort <- Bibs_species_NetHours %>% 
+  mutate(species_per_nethour = nspecies/totalnethours *100)
+  
+
+#How have numbers of species changed over time?
+ggplot(data = Bibs_species_Effort, aes(x = BANDING_YEAR, y = species_per_nethour))+
+  geom_point()+
+  geom_line()+
+  theme_classic()+
+  xlab("Year")+
+  ylab("Number of Bird Species Captured Per 100 Net Hours")
+```
+
+
+
+I did not account for effort originally in this analysis but after seeing the amount of variation, I went back and divided the number of species by the net hours and multiplied by 100 to make the numbers more round. Once you account for effort, we end up seeing a pattern that is quite similar to the first figure, with a steep drop in the 1970s. This made me curious to dig more into specific species to see if this pattern continued.
+
+
+
+```{r Long distance migrants,  echo = FALSE, message = FALSE, warning = FALSE}
+####long distance migrants
+#make long distance migrant dataset
+LongDistanceMigrants <- falldataBIBS %>% 
+  filter(BANDING_YEAR <= 2016) %>% 
+  filter(SPECIES_NAME == "Blackpoll Warbler" | SPECIES_NAME == "Red-eyed Vireo" | SPECIES_NAME == "American Redstart" | SPECIES_NAME == "Northern Parula") %>% 
+  group_by(BANDING_YEAR, SPECIES_NAME) %>% 
+  summarize(nbirds = n())
+
+#add net hours
+LongDistance_NetHours = merge(x=LongDistanceMigrants,y=YearlyNetHours,by="BANDING_YEAR",all=TRUE)
+
+#calculate birds/100 hours effort
+LongDistance_effort <- LongDistance_NetHours %>% 
+  mutate(nbirds_nethour = nbirds/totalnethours *100) %>% 
+  filter(!is.na(SPECIES_NAME))
+```
+
+
+
+## Figure 3. How does the abundance of long distance migrants change over time?
+
+The next few figures all use the same approach. I took a subset of the species we catch on Block Island, based on migratory strategy, and put them next to each other to see how different common migrants have changed over time. Migratory strategies were taken from a recent paper by Kamm et al. 2019. All of these figures include data that was filtered to only include the species of interest. Effort was calculated as the number of birds of a given species/effort *100. I classified long distance migrants as birds that winter in Central America or South America.
+
+
+```{r Long distance migrants graph, warning = FALSE, echo = FALSE, message = FALSE}
+ggplot(data = LongDistance_effort, aes(x = BANDING_YEAR, y = nbirds_nethour, group = SPECIES_NAME, color = SPECIES_NAME))+
+  geom_point()+
+  geom_line()+
+  geom_smooth(method = "lm")+
+  theme_classic()+
+  facet_wrap(~SPECIES_NAME)+
+  theme(legend.position = "none")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))+
+  labs(x = "Year", y= "Birds Per 100 Net Hours", color = "Species")
+
+
+```
+
+```{r long distance stats, warning = FALSE, echo = FALSE, message = FALSE}
+lm(nbirds_nethour~SPECIES_NAME+BANDING_YEAR, LongDistance_effort) %>% 
+  summary()
+
+```
+
+
+
+Interestingly, Red-eyed vireos seem to show a very similar pattern to the two previous figures, with a sharp decrease in the mid-1970s. It is challenging to see any real pattern with the other three birds because capture numbers of these species are quite low every year. That said, it appears that populations of redstarts, parulas, and blackpolls are relatively stable on Block Island. 
+
+
+
+## Figure 4. How does the abundance of short distance migrants change over time?
+
+This figure used the exact same approach as Figure 4, except I only focused on short distance migrants. Short distance migrants were classified as birds that overwinter in the southern US. 
+```{r short distance migrants,  echo = FALSE, message = FALSE}
+#make short distance migrant dataset
+ShortDistanceMigrants <- falldataBIBS %>% 
+  filter(SPECIES_NAME == "Brown Creeper" | SPECIES_NAME == "Northern Waterthrush" | SPECIES_NAME == "Eastern Phoebe" | SPECIES_NAME == "Eastern Towhee") %>% 
+  group_by(BANDING_YEAR, SPECIES_NAME) %>% 
+  summarize(nbirds = n())
+
+#add net hours
+ShortDistance_NetHours = merge(x=ShortDistanceMigrants,y=YearlyNetHours,by="BANDING_YEAR",all=TRUE)
+
+#calculate birds/100s hour effort
+ShortDistance_effort <- ShortDistance_NetHours %>% 
+  mutate(nbirds_nethour = nbirds/totalnethours *100) %>% 
+  filter(!is.na(SPECIES_NAME))
+
+```
+
+
+
+
+```{r short distance migrants graph, warning = FALSE, echo = FALSE, message = FALSE}
+#plot!
+ggplot(data = ShortDistance_effort, aes(x = BANDING_YEAR, y = nbirds_nethour, group = SPECIES_NAME, color = SPECIES_NAME))+
+  geom_point()+
+  geom_line()+
+  geom_smooth(method = "lm")+
+  theme_classic()+
+  facet_wrap(~SPECIES_NAME)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))+
+  theme(legend.position = "none")+
+  labs(x = "Year", y= "Birds Per 100 Net Hours", color = "Species")
+
+
+
+```
+```{r short distance stats, warning = FALSE,  echo = FALSE, message = FALSE }
+lm(nbirds_nethour~SPECIES_NAME+BANDING_YEAR, ShortDistance_effort) %>% 
+  summary()
+```
+
+
+
+
+Eastern Towhees and Northern Waterthrushes seem to also mirror Figure 1 and 2 with a drop in numbers in the 1970s. Eastern Phoebes do not have a distinct pattern over time. Interestingly, Brown Creepers seem to be increasing over time. Further analysis is necessary to determine why (outside of the scope of this project), but my prediction is that this may be due to the higher vegetation height on Block Island that has been noted by the banders in recent years.Further analysis will be needed to look more into this prediction.
+
+```{r residents, warning = FALSE,  echo = FALSE, message = FALSE}
+####Residents
+#make resident dataset
+Residents <- falldataBIBS %>% 
+  filter(SPECIES_NAME == "Black-capped Chickadee" | SPECIES_NAME == "Carolina Wren" | SPECIES_NAME == "Downy Woodpecker" | SPECIES_NAME == "Northern Cardinal") %>% 
+  group_by(BANDING_YEAR, SPECIES_NAME) %>% 
+  summarize(nbirds = n())
+
+#add net hours
+Resident_NetHours = merge(x=Residents,y=YearlyNetHours,by="BANDING_YEAR",all=TRUE)
+
+#calculate birds/100s hour effort
+Resident_effort <- Resident_NetHours %>% 
+  mutate(nbirds_nethour = nbirds/totalnethours *100) %>% 
+  filter(!is.na(SPECIES_NAME))
+
+
+```
+
+
+
+## Figure 5. How does the abundance of resident birds change over time?
+
+This figure used the exact same approach as Figure 4 and 5, with that exception that it is focused on resident birds, or birds that are present on Block Island year-round. I was curious about resident birds because they do not have to undertake long, strenuous migrations, and I predicted that they would likely not experience the same declines that other more vulnerable species experience.
+```{r residents graph, warning = FALSE, echo = FALSE, message = FALSE}
+#plot!
+ggplot(data = Resident_effort, aes(x = BANDING_YEAR, y = nbirds_nethour, color = SPECIES_NAME))+
+  geom_point()+
+  geom_line()+
+  geom_smooth(method = "lm")+
+  theme_classic()+
+  facet_wrap(~SPECIES_NAME)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))+
+  theme(legend.position = "none")+
+  xlab("Year")+
+  ylab("Birds Per 100 Net Hours")
+
+
+```
+```{r resident stats, echo = FALSE, message = FALSE, warning = FALSE}
+lm(nbirds_nethour~SPECIES_NAME+BANDING_YEAR, Resident_effort) %>% 
+  summary()
+```
+
+
+Three out of the four resident species that I looked at seemed to be largely increasing overtime, though there is still a great deal of variation. Interesting we still seem to see cyclical boom and bust years, even as bird abundance is increasing. All of these figures are not easily represented by a linear model because of all of the variation in the data, but I decided to include the linear model simply to help visualize whether populations are increasing or decreasing over time, and if so, how rapidly.
+
+```{r most common species analysis,  echo = FALSE, message = FALSE, warning = FALSE}
+#figure out the 6 most common species and then graph them
+  mostcommon <- falldataBIBS %>% 
+    group_by(SPECIES_NAME) %>% 
+    summarize(n())
+
+#top 6 are Myrtle, Gray Catbird, Golden-crowned Kinglet, Red-eyed Vireo, White-throated Sparrow, Hermit Thrush
+
+  MostCommonSpecies <- falldataBIBS %>% 
+    filter(SPECIES_NAME == "Myrtle Warbler" | SPECIES_NAME == "Gray Catbird" | SPECIES_NAME == "Golden-crowned Kinglet" | SPECIES_NAME == "Red-eyed Vireo" | SPECIES_NAME == "White-throated Sparrow" | SPECIES_NAME == "Hermit Thrush") %>% 
+    group_by(BANDING_YEAR, SPECIES_NAME) %>% 
+    summarize(nbirds = n())
+  
+  #add net hours
+  MostCommonSpecies_NetHours = merge(x=MostCommonSpecies,y=YearlyNetHours,by="BANDING_YEAR",all=TRUE)
+  
+  #calculate birds/100s hour effort
+  MostCommon_effort <- MostCommonSpecies_NetHours %>% 
+    mutate(nbirds_nethour = nbirds/totalnethours *100) %>% 
+    filter(!is.na(SPECIES_NAME))
+
+
+  
+```
+
+
+
+## Figure 6. How as the abundance of the six most common birds on Block Island changed over time?
+
+In this case, "most common" simply means that bird species that are most commonly caught on Block Island. This was determined by tallying the number of captures of each species across years and sorting so that I could pull out the top six species. From there, I was able to follow the same methods from previous figures. I filtered for the species I was interested in, counted up yearly capture totals, merged that data with the net hours, and calculated birds per 100 net hours to account for effort. 
+
+```{r most common species graph, warning = FALSE, echo = FALSE, message = FALSE}
+  ggplot(data = MostCommon_effort, aes(x = BANDING_YEAR, y = nbirds_nethour, color = SPECIES_NAME))+
+    geom_point()+
+    geom_line()+
+    geom_smooth(method = "lm")+
+    theme_classic()+
+    facet_wrap(~SPECIES_NAME)+
+    theme(legend.position = "none")+
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5))+
+    xlab("Year")+
+    ylab("Birds Per 100 Net Hours")
+
+
+
+```
+```{r most common stats, echo = FALSE, message = FALSE, warning = FALSE }
+ lm(nbirds_nethour~SPECIES_NAME:BANDING_YEAR, MostCommon_effort) %>% 
+  summary()
+```
+
+
+```{r percent change, echo = FALSE, message = FALSE, warning = FALSE}
+
+ 
+  
+#calculate percent change
+    #filter down the decades (70s vs 2010s), count the number of captures by species and year, and then calculate the means per decade
+    #then merge them together and use mutate to calculate percent change
+    #I only included birds that were caught in all 11 years 
+  
+mean1970s <- falldataBIBS %>% 
+    filter(BANDING_YEAR >=1970 & BANDING_YEAR <= 1980) %>% 
+   group_by(SPECIES_NAME, BANDING_YEAR) %>% 
+    summarize(nbirds = n()) %>% 
+    group_by(SPECIES_NAME) %>% 
+    summarize(meanbirds70s = mean(nbirds), sdbirds70s = sd(nbirds), nyears70s = n()) %>% 
+    filter(nyears70s == 11)
+    
+  
+  mean2000s <- falldataBIBS %>% 
+    filter(BANDING_YEAR >=2010 & BANDING_YEAR <= 2020) %>% 
+    group_by(SPECIES_NAME, BANDING_YEAR) %>% 
+    summarize(nbirds = n()) %>% 
+    group_by(SPECIES_NAME) %>% 
+    summarize(meanbirds2000s = mean(nbirds), sdbirds2000s = sd(nbirds), nyears2000s = n()) %>% 
+    filter(nyears2000s == 11)
+  
+#merge them into one dataframe
+  
+  merged1970svs2000s = merge(x=mean1970s,y=mean2000s,by="SPECIES_NAME",all=TRUE)
+  
+
+  #calculate percent change
+  percentchange70sto2000s <- merged1970svs2000s %>% 
+    filter(!is.na(meanbirds70s) & !is.na(sdbirds70s) & !is.na(meanbirds2000s) & !is.na(sdbirds2000s)) %>% 
+    mutate(percentchange = (meanbirds2000s-meanbirds70s)/(meanbirds70s)*100)
+  
+
+ 
+  
+
+```
+
+
+
+## Figure 7. What is the percent change of bird abundance from the 1970s to present?
+
+For this analysis, I created two separate dataframes. The first was filtered to just be 1970 (the beginning of my data) to 1980 to cover the span on one decade. The second was filtered to only include 2010 to 2020 (the most recent decade of data that I have). Once I had both dataframes filtered, I was able to count the number of observations in the dataframes by banding year. After this, I then took the averages of those counts across each time interval. Once both dataframes were complete, I merged them together based on species name, removed all NAs, and calculated the percent change. 
+
+
+```{r percent change graph, warning = FALSE, message = FALSE, echo = FALSE}
+ggplot(percentchange70sto2000s, aes(x= SPECIES_NAME, y = percentchange, fill = SPECIES_NAME))+
+    geom_bar(stat = "identity", position=position_dodge())+
+    xlab("Species")+
+    ylab("Percent Change")+
+    theme_classic()+
+    coord_flip()+
+    theme(legend.position = "none")
+```
+
+
+
+This is consistent with the other results I found, where Brown Creepers are the only species increasing for some reason! Really interesting. I'd be curious to look more at vegetation changes over time in my future analysis. Creepers are tree-dwelling species and Block Island traditionally has very few trees, though the vegetation is getting a lot taller and might be more conducive to foraging for a Brown Creeper. Really interesting!
+
+
+
+## Figure 8: Has the number of bird captures of the four most common bird species on Block Island changed significantly from the 1970s until present?
+
+For my last figure, I made a boxplot comparing bird captures in the 70s and bird captures in the 2010S. This is similar to my percent change analysis but it'll allow us to make more direct comparisons and run stats! I only ran this analysis on the four most common birds: GRCA, GCKI, REVI, AND MYWA. To do this, I created a dataframe that was filtered down to only the two decades I was interested in. I then added a "decades" column that designated which decade it was from. All data was accounted for effort. I could then plot a boxplot with "decade" as the fill. Finally, I was able to create a dataframe with the same data (accounted for effort) but with each decade in a different column. This allowed me to run a paired t-test on my four species to see if the differences were significant.
+
+```{r fall captures per year per SPECIEs, echo = FALSE, message = FALSE, warning = FALSE}
+
+#Calculate fall captures per year per SPECIES, this is the same code we did in the beginning but I added species
+#this code is needed for the next two chunks of analysis
+BIBSYearlyCapturesPerSpecies <- falldataBIBS %>% 
+  filter(BANDING_YEAR <= 2016) %>% 
+  group_by(BANDING_YEAR, SPECIES_NAME) %>% 
+  summarize(Number_Captures = n())
+
+#merge them into one so we have net hours + captures!
+YearlyCapturesPerSpecies_NetHours = merge(x=BIBSYearlyCapturesPerSpecies,y=YearlyNetHours,by="BANDING_YEAR",all=TRUE)
+
+#now we can account for effort!
+#this gives us birds per 100 net hours
+YearlyCapturesPerSpecies_Effort <- YearlyCapturesPerSpecies_NetHours %>% 
+  mutate(birds_per_nethour = Number_Captures/totalnethours *100)
+  
+  
+```
+
+```{r boxplot wrangling 70s vs 2010s, echo=FALSE, message = FALSE, warning = FALSE}
+ 
+
+#calculate yearly birds/100 net hours in 70s and 2010s. Filter out any NAs. We are using the data created above.
+  n70sand2010s <- YearlyCapturesPerSpecies_Effort %>% 
+    filter(BANDING_YEAR >=1970 & BANDING_YEAR <= 1980 | BANDING_YEAR >=2010 & BANDING_YEAR <= 2020) %>% 
+  filter(!is.na(BANDING_YEAR))
+  
+    
+#add column denoting decade (70s or 2010s)
+    n70sand2010s$year <- NA
+    n70sand2010s$year <- ifelse(n70sand2010s$BANDING_YEAR >= 1970 & n70sand2010s$BANDING_YEAR <= 1980, "1970s", "2010s")  
+    n70sand2010s$year <- as.factor(n70sand2010s$year)
+  
+    
+ #filter for boxplots, only four most common birds because that's what I'm interested in
+    mostcommon70svs2010s <-n70sand2010s %>% 
+      filter(SPECIES_NAME == "Myrtle Warbler" | SPECIES_NAME == "Gray Catbird" | SPECIES_NAME == "Red-eyed Vireo" | SPECIES_NAME == "Golden-crowned Kinglet")
+      
+  
+ 
+
+
+```
+
+
+```{r 70s vs 2010s counts boxplot, echo = FALSE, message = FALSE, warning = FALSE}
+  
+#boxplot of 70s vs 2010s
+
+  ggplot(mostcommon70svs2010s, aes(x = SPECIES_NAME, y=birds_per_nethour,  fill = year)) +
+  geom_boxplot()+
+    scale_x_discrete(labels = c("GCKI", "GRCA", "MYWA", "REVI")) +
+    labs(x = "Bird Species", y = "Birds Per 100 Net Hours", fill = "Decade") +
+    theme_classic()
+
+
+
+```
+
+
+All four species had significant differences between decades. REVIs, MYWAs, and GRCAs all significantly decreased over time, while GCKIs increased slightly (but significantly) over time. 
+
+```{r t-tests on most common species, echo = FALSE, message=FALSE, warning=FALSE}
+
+
+#for our t test, we just need 70s and four species so we filter
+ttest1970s <- YearlyCapturesPerSpecies_Effort %>% 
+    filter(BANDING_YEAR >=1970 & BANDING_YEAR <= 1980) %>% 
+    filter(SPECIES_NAME == "Myrtle Warbler" | SPECIES_NAME == "Gray Catbird" | SPECIES_NAME == "Red-eyed Vireo" | SPECIES_NAME == "Golden-crowned Kinglet") 
+ 
+    
+  
+#now we just need 2010s (same four species)
+  ttest2010s <- YearlyCapturesPerSpecies_Effort %>% 
+    filter(BANDING_YEAR >=2010 & BANDING_YEAR <= 2020) %>% 
+   filter(SPECIES_NAME == "Myrtle Warbler" | SPECIES_NAME == "Gray Catbird" | SPECIES_NAME == "Red-eyed Vireo" | SPECIES_NAME == "Golden-crowned Kinglet")
+    
+    
+  
+#merge them into one dataframe
+  
+  mergedttest1970svs2000s = merge(x=ttest1970s,y=ttest2010s,by="SPECIES_NAME",all=TRUE)
+  
+#now we can run our paired two sample t test! This code will give us p, t, df, mean difference, and 95% confidence intervals.
+
+t_test_results <- mergedttest1970svs2000s %>%
+  group_by(SPECIES_NAME) %>%
+  summarise(p_value = t.test(`birds_per_nethour.x`, `birds_per_nethour.y`, paired = TRUE)$p.value,
+            t_value = t.test(`birds_per_nethour.x`, `birds_per_nethour.y`, paired = TRUE)$statistic,
+            df = t.test(`birds_per_nethour.x`, `birds_per_nethour.y`, paired = TRUE)$parameter,
+            mean_difference = mean(`birds_per_nethour.y` - `birds_per_nethour.x`),
+            ci_lower = t.test(`birds_per_nethour.x`, `birds_per_nethour.y`, paired = TRUE)$conf.int[1],
+            ci_upper = t.test(`birds_per_nethour.x`, `birds_per_nethour.y`, paired = TRUE)$conf.int[2]
+  )
+
+
+```
+
+
+
+
+## References
+Kamm, M. D., T. L. Lloyd-Evans, M. Handmaker, and J. M. Reed. 2019. A half-century of changes in migratory landbird numbers along coastal Massachusetts. PLOS ONE 14:1-18. 
